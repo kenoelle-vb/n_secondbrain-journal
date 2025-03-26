@@ -3,7 +3,7 @@
 
 import streamlit as st
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, ParserRejectedMarkup
 from newspaper import Article
 import google.generativeai as genai
 import pandas as pd
@@ -322,30 +322,35 @@ def getNewsData(query):
     }
 
     encoded_query = quote_plus(query)
-    url = f"https://www.google.com/search?q={encoded_query}&gl=us&tbm=nws&num=15"  # added gl=us
+    url = f"https://www.google.com/search?q={encoded_query}&gl=us&tbm=nws&num=15"
 
     try:
         response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
+        response.raise_for_status()  # Raise an exception for bad status codes
+
+        try:
+            soup = BeautifulSoup(response.content, "html.parser")
+        except ParserRejectedMarkup as e:
+            print(f"Error parsing HTML: {e}")
+            return []
+
+        news_results = []
+
+        for el in soup.select("div.SoaBEf"):
+            news_results.append(
+                {
+                    "link": el.find("a")["href"],
+                    "title": el.select_one("div.MBeuO").get_text(),
+                    "snippet": el.select_one(".GI74Re").get_text(),
+                    "date": el.select_one(".LfVVr").get_text(),
+                    "source": el.select_one(".NUnG9d span").get_text(),
+                }
+            )
+        return news_results
+
     except requests.exceptions.RequestException as e:
         print(f"Error fetching news data: {e}")
         return []
-
-    soup = BeautifulSoup(response.content, "html.parser")
-    news_results = []
-
-    for el in soup.select("div.SoaBEf"):  # Updated selector
-        news_results.append(
-            {
-                "link": el.find("a")["href"],
-                "title": el.select_one("div.MBeuO").get_text(),  # Updated selector
-                "snippet": el.select_one(".GI74Re").get_text(),  # Updated selector
-                "date": el.select_one(".LfVVr").get_text(),  # Updated selector
-                "source": el.select_one(".NUnG9d span").get_text(),  # Updated selector
-            }
-        )
-    return news_results
-
 def download_and_parse_with_timeout(article, link, timeout=10):
     """Downloads and parses an article with a time limit, filters short content."""
     
