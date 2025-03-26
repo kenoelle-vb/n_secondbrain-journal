@@ -27,13 +27,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.docstore.document import Document
 import os
 import io
-
-# Check if nltk data is already downloaded
-if not os.path.exists(nltk.data.path[0]):
-    try:
-        nltk.download('punkt_tab')
-    except Exception as e:
-        print(f"Error downloading nltk data: {e}")
+nltk.download('punkt_tab')
 
 # ============================================== HTML AND CSS =========================================================================================
 
@@ -708,58 +702,102 @@ def save_results_to_excel_in_memory(parts_list, refined_results, pdf_dataframes 
     excel_buffer.seek(0)
     return excel_buffer.getvalue()
 
-def save_results_to_docx_in_memory(parts_list, refined_results, base_filename="my_results", pdf_dataframes=None):
-    """Saves the refined results and PDF dataframes into in-memory docx files."""
-    docx_files = {}
+def save_results_to_docx_in_memory(parts_list, refined_results, base_filename="refined_journal_results", pdf_dataframes = {}):
+    """
+    Saves the parts, final output, initial output, and thinking logs into separate DOCX documents, including PDF data.
+    Returns a dictionary of filenames to binary data.
+    """
+    files = {}
 
-    for idx, part in enumerate(parts_list):
-        doc = Document()  # Create a new docx document
-        doc.add_heading(f"Part {idx + 1}: {part}", level=1)
+    # Save parts
+    doc_part = Document()
+    doc_part.add_heading("PART", level=1)
+    for idx, part in enumerate(parts_list, start=1):
+        doc_part.add_heading(f"Part {idx}: {part}", level=2)
+    buffer_part = BytesIO()
+    doc_part.save(buffer_part)
+    buffer_part.seek(0)
+    files[f"{base_filename}_part.docx"] = buffer_part.getvalue()
 
-        # Add refined results
-        doc.add_paragraph(f"Final Output:\n{refined_results[idx]['FINAL OUTPUT']}")
-        doc.add_paragraph(f"Initial Output:\n{refined_results[idx]['INITIAL OUTPUT']}")
-        doc.add_paragraph(f"Thinking Logs:\n{refined_results[idx]['THINKING LOGS']}")
+    # Save final outputs
+    doc_final = Document()
+    doc_final.add_heading("FINAL OUTPUT", level=1)
+    for idx, res in enumerate(refined_results, start=1):
+        doc_final.add_heading(f"Part {idx}", level=2)
+        doc_final.add_paragraph(res["FINAL OUTPUT"])
+    buffer_final = BytesIO()
+    doc_final.save(buffer_final)
+    buffer_final.seek(0)
+    files[f"{base_filename}_final_output.docx"] = buffer_final.getvalue()
 
-        # Add PDF dataframes if available
-        if pdf_dataframes and f"internetsearch_part{idx + 1}" in pdf_dataframes:
-            doc.add_heading("PDF Data", level=2)
-            pdf_df = pdf_dataframes[f"internetsearch_part{idx + 1}"]
-            for _, row in pdf_df.iterrows():
-                doc.add_paragraph(f"Link: {row['Link']}\nText: {row['Text']}")
+    # Save initial outputs
+    doc_initial = Document()
+    doc_initial.add_heading("INITIAL OUTPUT", level=1)
+    for idx, res in enumerate(refined_results, start=1):
+        doc_initial.add_heading(f"Part {idx}", level=2)
+        doc_initial.add_paragraph(res["INITIAL OUTPUT"])
+    buffer_initial = BytesIO()
+    doc_initial.save(buffer_initial)
+    buffer_initial.seek(0)
+    files[f"{base_filename}_initial_output.docx"] = buffer_initial.getvalue()
 
-        # Save docx to in-memory buffer
-        docx_buffer = BytesIO()
-        doc.save(docx_buffer)
-        docx_buffer.seek(0)
-        docx_files[f"{base_filename}_part{idx + 1}.docx"] = docx_buffer.getvalue()
+    # Save thinking logs
+    doc_logs = Document()
+    doc_logs.add_heading("THINKING LOGS", level=1)
+    for idx, res in enumerate(refined_results, start=1):
+        doc_logs.add_heading(f"Part {idx}", level=2)
+        doc_logs.add_paragraph("\n\n".join(res["THINKING LOGS"]))
+    buffer_logs = BytesIO()
+    doc_logs.save(buffer_logs)
+    buffer_logs.seek(0)
+    files[f"{base_filename}_thinking_logs.docx"] = buffer_logs.getvalue()
 
-    return docx_files
+    # Save PDF dataframes as separate documents
+    for df_name, df in pdf_dataframes.items():
+        doc_pdf = Document()
+        doc_pdf.add_heading(f"PDF Data: {df_name}", level=1)
+        # Add dataframe content to the document
+        for column in df.columns:
+            doc_pdf.add_heading(column, level=2)
+            for value in df[column]:
+                doc_pdf.add_paragraph(str(value))
+        buffer_pdf = BytesIO()
+        doc_pdf.save(buffer_pdf)
+        buffer_pdf.seek(0)
+        files[f"{base_filename}_{df_name}.docx"] = buffer_pdf.getvalue()
 
-def save_results_to_txt_in_memory(parts_list, refined_results, base_filename="my_results", pdf_dataframes=None):
-    """Saves the refined results and PDF dataframes into in-memory text files."""
-    txt_files = {}
+    return files
 
-    for idx, part in enumerate(parts_list):
-        txt_buffer = BytesIO()
-        txt_content = ""
+def save_results_to_txt_in_memory(parts_list, refined_results, base_filename="refined_journal_results", pdf_dataframes = {}):
+    """
+    Saves the parts, final outputs, initial outputs, and thinking logs into TXT files, including PDF data.
+    Returns a dictionary of filenames to binary data.
+    """
+    files = {}
+    
+    parts_txt = "\n".join(parts_list)
+    files[f"{base_filename}_part.txt"] = parts_txt.encode("utf-8")
+    
+    final_txt = "\n".join([res["FINAL OUTPUT"] for res in refined_results])
+    files[f"{base_filename}_final_output.txt"] = final_txt.encode("utf-8")
+    
+    initial_txt = "\n".join([res["INITIAL OUTPUT"] for res in refined_results])
+    files[f"{base_filename}_initial_output.txt"] = initial_txt.encode("utf-8")
+    
+    logs_txt = "\n\n".join(["\n\n".join(res["THINKING LOGS"]) for res in refined_results])
+    files[f"{base_filename}_thinking_logs.txt"] = logs_txt.encode("utf-8")
 
-        txt_content += f"Part {idx + 1}: {part}\n\n"
-        txt_content += f"Final Output:\n{refined_results[idx]['FINAL OUTPUT']}\n\n"
-        txt_content += f"Initial Output:\n{refined_results[idx]['INITIAL OUTPUT']}\n\n"
-        txt_content += f"Thinking Logs:\n{refined_results[idx]['THINKING LOGS']}\n\n"
-
-        if pdf_dataframes and f"internetsearch_part{idx + 1}" in pdf_dataframes:
-            txt_content += "PDF Data:\n\n"
-            pdf_df = pdf_dataframes[f"internetsearch_part{idx + 1}"]
-            for _, row in pdf_df.iterrows():
-                txt_content += f"Link: {row['Link']}\nText: {row['Text']}\n\n"
-
-        txt_buffer.write(txt_content.encode("utf-8")) #encode the text
-        txt_buffer.seek(0)
-        txt_files[f"{base_filename}_part{idx + 1}.txt"] = txt_buffer.getvalue()
-
-    return txt_files
+    # Save PDF dataframes as separate text files
+    for df_name, df in pdf_dataframes.items():
+        pdf_txt = ""
+        for column in df.columns:
+            pdf_txt += f"{column}:\n"
+            for value in df[column]:
+                pdf_txt += f"{value}\n"
+            pdf_txt += "\n"
+        files[f"{base_filename}_{df_name}.txt"] = pdf_txt.encode("utf-8")
+    
+    return files
 
 # ---------------------------------------
 # Session State Reset Function
@@ -784,7 +822,7 @@ colmain1, colmain2 = st.columns([1, 12])
 with colmain1:
     image = Image.open('logo.png')
     resized_image = image.resize((80, 80))
-    st.image(resized_image)  # Remove the label argument
+    st.image(resized_image)
 with colmain2:
     st.markdown(
         """
@@ -799,13 +837,13 @@ with colmain2:
 col1, col2, col3 = st.columns([3, 2, 2])
 
 # Column 1: Paper Type, Prompt Input and Length Info
-with col1.expander("Prompt and Paper Type", expanded=True):
+with col1.expander("", expanded=True):
     st.subheader("Select Paper Type")
     paper_types = ["Research Paper", "Essay", "Opinion Essay", "Literature Review", "Case Study", "Thesis", "Dissertation", "Term Paper", "Report", "Analysis"]
-    paper_type = st.selectbox("Paper Type", paper_types, label="paper type")
+    paper_type = st.selectbox("Paper Type", paper_types)
     
     st.subheader("Enter Main Prompt")
-    prompt_input = st.text_area("Main Prompt", height=410, label="main prompt")
+    prompt_input = st.text_area("Main Prompt", height=410)
     prompt_length_container = st.container()
     if prompt_input:
         prompt_len = len(prompt_input)
@@ -816,37 +854,37 @@ with col1.expander("Prompt and Paper Type", expanded=True):
         prompt_length_container.info("Prompt length: 0 / 10000")
 
 # Column 2: TOC and Refinement Settings
-with col2.expander("TOC and Refinement", expanded=True):
+with col2.expander("", expanded=True):
     st.subheader("Table of Contents Settings")
     st.write("Select how many parts the task should be divided into.")
-    toc_parts = st.slider("Number of Parts", min_value=1, max_value=40, value=5, label="toc parts")
+    toc_parts = st.slider("", min_value=1, max_value=40, value=5)
     
     st.subheader("Refinement Iterations")
     st.write("Select how many refinement iterations (thinking sessions) to perform for each part.")
-    n_iterations = st.slider("Iterations", min_value=1, max_value=7, value=4, label="refinement iterations")
+    n_iterations = st.slider("", min_value=1, max_value=7, value=4)
 
     st.subheader("Internet Search")
-    use_internet = st.checkbox("Use Internet Search as Context", label="internet search")
+    use_internet = st.checkbox("Use Internet Search as Context")
     if use_internet:
-        after_date = st.date_input("Search After", value=datetime.date(2020, 1, 1), label="after date")
-        before_date = st.date_input("Search Before", value=datetime.date(2029, 1, 1), label="before date")
+        after_date = st.date_input("Search After", value=datetime.date(2020, 1, 1))
+        before_date = st.date_input("Search Before", value=datetime.date(2029, 1, 1))
     
-    use_pdf = st.checkbox("Use PDF Search as Context", label="pdf search")
+    use_pdf = st.checkbox("Use PDF Search as Context")
 
 # Column 3: Output File Settings & Initial Generate Button
-with col3.expander("Output Settings", expanded=True):
+with col3.expander("", expanded=True):
     st.subheader("Select Types of File")
     st.write("Choose the file formats for the final outputs (docx, excel, txt).")
     doc_types = st.multiselect(
         "Document Types",
         options=["docx", "excel", "txt"],
-        default=["docx", "excel", "txt"], label="document types"
+        default=["docx", "excel", "txt"]
     )
     if prompt_input:
         est_time = toc_parts * n_iterations * 0.8
         st.warning(f"Estimated processing time: ~{est_time:.1f} minutes.")
     if prompt_input and "toc_locked" not in st.session_state:
-        generate_toc_button = st.button("Generate TOC", key="generate_toc", label="generate toc")
+        generate_toc_button = st.button("Generate TOC", key="generate_toc")
 
 # ----------------------------------------------------------------------------- 
 # --- TOC Generation & Display --- 
@@ -856,26 +894,26 @@ if prompt_input and "toc_locked" not in st.session_state and generate_toc_button
     st.success("Table of Contents generated!")
 
 if prompt_input and ("toc" in st.session_state or "toc_locked" in st.session_state):
-    with st.expander("TOC Display", expanded=True):
+    with st.expander("", expanded=True):
         st.subheader("Generated Table of Contents")
         st.write("This Table of Contents was generated to give you an idea:")
         if "toc_locked" in st.session_state:
             st.write(st.session_state["toc_locked"])
         else:
             st.write(st.session_state["toc"])
-            if st.button("Re-Generate TOC", key="regen_toc", label="re-generate toc"):
+            if st.button("Re-Generate TOC", key="regen_toc"):
                 st.session_state["toc"] = table_of_contents(prompt_input, n_parts=toc_parts, model=st.session_state["model"], paper_type=paper_type)
                 st.success("Table of Contents regenerated!")
     
     if "toc_locked" not in st.session_state:
-        with st.expander("TOC Customization", expanded=True):
+        with st.expander("", expanded=True):
             st.subheader("Table of Contents Customization")
             if "toc_text_area" not in st.session_state:
                 st.session_state["toc_text_area"] = st.session_state["toc"]
             locked_toc = st.text_area("Edit Your Table of Contents (or copy and paste it here) (note: MUST HAVE NUMBER BEFORE PART (ex : 1. Part 1 ; 2. Part 2)):", 
                                         value=st.session_state["toc_text_area"],
-                                        height=200, key="toc_text_area", label="edit toc")
-            if st.button("Process", key="process_toc", label="process toc"):
+                                        height=200, key="toc_text_area")
+            if st.button("Process", key="process_toc"):
                 st.session_state["toc_locked"] = locked_toc
                 st.session_state["proceed"] = True
 
@@ -893,7 +931,7 @@ if (prompt_input
     # Step 1: Extract parts from the locked TOC
     parts_list = extract_parts(st.session_state["toc_locked"])
     
-    with st.expander("Progress Log", expanded=True):
+    with st.expander("", expanded=True):
         st.subheader("Progress Log")
         progress_container = st.empty()
         debug_log = ""
