@@ -784,7 +784,7 @@ colmain1, colmain2 = st.columns([1, 12])
 with colmain1:
     image = Image.open('logo.png')
     resized_image = image.resize((80, 80))
-    st.image(resized_image, label="app logo")
+    st.image(resized_image)  # Remove the label argument
 with colmain2:
     st.markdown(
         """
