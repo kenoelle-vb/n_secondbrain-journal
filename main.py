@@ -888,11 +888,11 @@ with col2.expander("", expanded=True):
 # Column 3: Output File Settings & Initial Generate Button
 with col3.expander("", expanded=True):
     st.subheader("Select Types of File")
-    st.write("Choose the file formats for the final outputs (docx, excel, txt).")
+    st.write("Choose the file formats for the final outputs (excel, txt).") # Modified description
     doc_types = st.multiselect(
         "Document Types",
-        options=["docx", "excel", "txt"],
-        default=["docx", "excel", "txt"]
+        options=["docx","excel", "txt"], # Removed "docx"
+        default=["excel", "txt"] # Removed "docx"
     )
     if prompt_input:
         est_time = toc_parts * n_iterations * 0.8
