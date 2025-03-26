@@ -980,7 +980,9 @@ if (prompt_input
                     formatted_query = f"{query} filetype:pdf" if use_pdf else query
                     debug_log = f"Part {idx}: Searching PDFs with query: {formatted_query}\n"
                     progress_container.info(debug_log)
+                    print(f"pdf query: {formatted_query}") #print the pdf query
                     pdf_dataframes_temp = getPdfData(formatted_query)
+                    print(f"pdf dataframes: {pdf_dataframes_temp}") #print the result of the function
                     if pdf_dataframes_temp:
                         for title, pdf_df in pdf_dataframes_temp.items():
                             part_data.extend(pdf_df.to_dict('records'))
@@ -1004,6 +1006,14 @@ if (prompt_input
 
                     debug_log = f"After query '{query}', downloaded articles count for Part {idx}: {len(articles_info)}\n"
                     progress_container.info(debug_log)
+                time.sleep(1)
+
+                # Store the internet knowledge and dataframe for this part
+                internet_knowledge[part] = "\n".join([item.get('content', '') for item in part_data])
+                df = pd.DataFrame(part_data)
+                excel_dataframes[f"internetsearch_part{idx}"] = df
+                debug_log = f"Final article/pdf count for TOC Part {idx}: {len(df)}\n"
+                progress_container.info(debug_log)
                 time.sleep(1)
 
                 # Store the internet knowledge and dataframe for this part
