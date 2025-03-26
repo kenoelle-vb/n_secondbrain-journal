@@ -443,29 +443,38 @@ def make_prompt_queries(prompt, n_parts, model):
             Do not mention the other parts.
             Do not include any other text except for the queries.
             Follow this format:
-            1. Query 1 -filetype:pdf -filetype:docx -filetype:pptx -filetype:xlsx
-            2. Query 2 -filetype:pdf -filetype:docx -filetype:pptx -filetype:xlsx
-            3. Query 3 -filetype:pdf -filetype:docx -filetype:pptx -filetype:xlsx
-            4. Query 4 filetype:pdf
-            5. Query 5 filetype:pdf
+            Article Queries:
+            1. Query 1
+            2. Query 2
+            3. Query 3
+            PDF Queries:
+            1. Query 4
+            2. Query 5
             If the requested output is Code, then DO NOT WRITE CODE AS THE QUERY, but USE KEY WORDS OF THE PROJECT TO GENERATE AS QUERY.
         """
         try:
             response = model.generate_content(part_prompt)
             lines = response.text.strip().split('\n')
-            queries = []
+            article_queries = []
+            pdf_queries = []
+            mode = None
             for line in lines:
                 line = line.strip()
-                if line:  # Check if line is not empty
-                    parts = line.split(". ", 1)
-                    if len(parts) > 1:
-                        queries.append(parts[1].strip())
-                    else:
-                        queries.append(line)  # Use the whole line as a query
-            queries_by_part[f"Part {i + 1}"] = queries[:5]  # take only the first 5 queries
+                if line.startswith("Article Queries:"):
+                    mode = "article"
+                elif line.startswith("PDF Queries:"):
+                    mode = "pdf"
+                elif mode == "article" and line:
+                    article_queries.append(line.split(". ", 1)[-1].strip())
+                elif mode == "pdf" and line:
+                    pdf_queries.append(line.split(". ", 1)[-1].strip())
+            queries_by_part[f"Part {i + 1}"] = {
+                "article": article_queries[:3],
+                "pdf": pdf_queries[:2]
+            }
         except Exception as e:
             st.error(f"Error generating queries for Part {i + 1}: {e}")
-            queries_by_part[f"Part {i+1}"] = ["Error: Could not generate Queries"]
+            queries_by_part[f"Part {i+1}"] = {"article": ["Error: Could not generate Queries"], "pdf": ["Error: Could not generate Queries"]}
     return queries_by_part
 
 # ---------------------------------------
@@ -710,7 +719,7 @@ def save_results_to_docx_in_memory(parts_list, refined_results, base_filename="r
     files = {}
 
     # Save parts
-    doc_part = Document()
+    doc_part = Document() # Corrected line: no arguments
     doc_part.add_heading("PART", level=1)
     for idx, part in enumerate(parts_list, start=1):
         doc_part.add_heading(f"Part {idx}: {part}", level=2)
@@ -720,7 +729,7 @@ def save_results_to_docx_in_memory(parts_list, refined_results, base_filename="r
     files[f"{base_filename}_part.docx"] = buffer_part.getvalue()
 
     # Save final outputs
-    doc_final = Document()
+    doc_final = Document() # Corrected line: no arguments
     doc_final.add_heading("FINAL OUTPUT", level=1)
     for idx, res in enumerate(refined_results, start=1):
         doc_final.add_heading(f"Part {idx}", level=2)
@@ -731,7 +740,7 @@ def save_results_to_docx_in_memory(parts_list, refined_results, base_filename="r
     files[f"{base_filename}_final_output.docx"] = buffer_final.getvalue()
 
     # Save initial outputs
-    doc_initial = Document()
+    doc_initial = Document() # Corrected line: no arguments
     doc_initial.add_heading("INITIAL OUTPUT", level=1)
     for idx, res in enumerate(refined_results, start=1):
         doc_initial.add_heading(f"Part {idx}", level=2)
@@ -742,7 +751,7 @@ def save_results_to_docx_in_memory(parts_list, refined_results, base_filename="r
     files[f"{base_filename}_initial_output.docx"] = buffer_initial.getvalue()
 
     # Save thinking logs
-    doc_logs = Document()
+    doc_logs = Document() # Corrected line: no arguments
     doc_logs.add_heading("THINKING LOGS", level=1)
     for idx, res in enumerate(refined_results, start=1):
         doc_logs.add_heading(f"Part {idx}", level=2)
@@ -754,7 +763,7 @@ def save_results_to_docx_in_memory(parts_list, refined_results, base_filename="r
 
     # Save PDF dataframes as separate documents
     for df_name, df in pdf_dataframes.items():
-        doc_pdf = Document()
+        doc_pdf = Document() # Corrected line: no arguments
         doc_pdf.add_heading(f"PDF Data: {df_name}", level=1)
         # Add dataframe content to the document
         for column in df.columns:
@@ -950,43 +959,55 @@ if (prompt_input
         queries_by_part = {} # Initialize the variable
         if use_internet or use_pdf:
             queries_by_part = make_prompt_queries(prompt_input, n_parts=len(parts_list), model=model) #get queries
-            
+
             for idx, part in enumerate(parts_list, start=1):
                 debug_log = f"\nStarting data collection for TOC part {idx}\n"
                 progress_container.info(debug_log)
                 part_content = ""
                 part_data = []
-                
-                # For each of the queries for this part
-                for query in queries_by_part.get(f"Part {idx}", []):
-                    # Append date filters to the query
-                    formatted_query = f"{query} after:{after_date} before:{before_date}" if use_internet else query
 
-                    debug_log = f"Part {idx}: Searching with query: {formatted_query}\n"
+                # For each of the queries for this part
+                article_queries = queries_by_part.get(f"Part {idx}", {}).get("article", [])
+                pdf_queries = queries_by_part.get(f"Part {idx}", {}).get("pdf", [])
+
+                # Process PDF queries
+                for query in pdf_queries:
+                    formatted_query = f"{query} filetype:pdf" if use_pdf else query
+                    debug_log = f"Part {idx}: Searching PDFs with query: {formatted_query}\n"
+                    progress_container.info(debug_log)
+                    pdf_dataframes_temp = getPdfData(formatted_query)
+                    if pdf_dataframes_temp:
+                        for title, pdf_df in pdf_dataframes_temp.items():
+                            part_data.extend(pdf_df.to_dict('records'))
+                    debug_log = f"After query '{query}', downloaded PDFs count for Part {idx}: {len(pdf_dataframes_temp)}\n"
                     progress_container.info(debug_log)
 
-                    if "filetype:pdf" in query and use_pdf:
-                        pdf_dataframes_temp = getPdfData(formatted_query)
-                        if pdf_dataframes_temp:
-                            for title, pdf_df in pdf_dataframes_temp.items():
-                                part_data.extend(pdf_df.to_dict('records'))
-                        debug_log = f"After query '{query}', downloaded PDFs count for Part {idx}: {len(pdf_dataframes_temp)}\n"
+                # Process article queries
+                for query in article_queries:
+                    formatted_query = f"{query} after:{after_date} before:{before_date} -filetype:pdf -filetype:docx -filetype:pptx -filetype:xlsx" if use_internet else query
+                    debug_log = f"Part {idx}: Searching articles with query: {formatted_query}\n"
+                    progress_container.info(debug_log)
+                    news_data = getNewsData(formatted_query)
+                    if not news_data:
+                        debug_log = f"Warning: No news data returned for query: {formatted_query}\n"
                         progress_container.info(debug_log)
 
-                    if "-filetype" not in query and use_internet:
-                        news_data = getNewsData(formatted_query)
-                        if not news_data:
-                            debug_log = f"Warning: No news data returned for query: {formatted_query}\n"
-                            progress_container.info(debug_log)
-                        
-                        links = [item["link"] for item in news_data]
-                        articles_info = extract_article_info(links)
-                        if articles_info is not None:
-                            part_data.extend(articles_info.to_dict('records'))
+                    links = [item["link"] for item in news_data]
+                    articles_info = extract_article_info(links)
+                    if articles_info is not None:
+                        part_data.extend(articles_info.to_dict('records'))
 
-                        debug_log = f"After query '{query}', downloaded articles count for Part {idx}: {len(articles_info)}\n"
-                        progress_container.info(debug_log)
-                    time.sleep(1)
+                    debug_log = f"After query '{query}', downloaded articles count for Part {idx}: {len(articles_info)}\n"
+                    progress_container.info(debug_log)
+                time.sleep(1)
+
+                # Store the internet knowledge and dataframe for this part
+                internet_knowledge[part] = "\n".join([item.get('content', '') for item in part_data])
+                df = pd.DataFrame(part_data)
+                excel_dataframes[f"internetsearch_part{idx}"] = df
+                debug_log = f"Final article/pdf count for TOC Part {idx}: {len(df)}\n"
+                progress_container.info(debug_log)
+                time.sleep(1)
 
                 # Store the internet knowledge and dataframe for this part
                 internet_knowledge[part] = "\n".join([item.get('content', '') for item in part_data])
