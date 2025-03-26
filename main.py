@@ -724,7 +724,7 @@ def save_results_to_docx_in_memory(parts_list, refined_results, base_filename="r
     files = {}
 
     # Save parts
-    doc_part = Document() # Corrected line: no arguments
+    doc_part = Document()  # Corrected line: no arguments
     doc_part.add_heading("PART", level=1)
     for idx, part in enumerate(parts_list, start=1):
         doc_part.add_heading(f"Part {idx}: {part}", level=2)
@@ -734,7 +734,7 @@ def save_results_to_docx_in_memory(parts_list, refined_results, base_filename="r
     files[f"{base_filename}_part.docx"] = buffer_part.getvalue()
 
     # Save final outputs
-    doc_final = Document() # Corrected line: no arguments
+    doc_final = Document()  # Corrected line: no arguments
     doc_final.add_heading("FINAL OUTPUT", level=1)
     for idx, res in enumerate(refined_results, start=1):
         doc_final.add_heading(f"Part {idx}", level=2)
@@ -745,7 +745,7 @@ def save_results_to_docx_in_memory(parts_list, refined_results, base_filename="r
     files[f"{base_filename}_final_output.docx"] = buffer_final.getvalue()
 
     # Save initial outputs
-    doc_initial = Document() # Corrected line: no arguments
+    doc_initial = Document()  # Corrected line: no arguments
     doc_initial.add_heading("INITIAL OUTPUT", level=1)
     for idx, res in enumerate(refined_results, start=1):
         doc_initial.add_heading(f"Part {idx}", level=2)
@@ -756,7 +756,7 @@ def save_results_to_docx_in_memory(parts_list, refined_results, base_filename="r
     files[f"{base_filename}_initial_output.docx"] = buffer_initial.getvalue()
 
     # Save thinking logs
-    doc_logs = Document() # Corrected line: no arguments
+    doc_logs = Document()  # Corrected line: no arguments
     doc_logs.add_heading("THINKING LOGS", level=1)
     for idx, res in enumerate(refined_results, start=1):
         doc_logs.add_heading(f"Part {idx}", level=2)
