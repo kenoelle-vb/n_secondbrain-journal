@@ -22,7 +22,10 @@ import base64
 import random
 from urllib.parse import quote_plus
 import nltk
-import PyPDF2
+from PyPDF2 import PdfReader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.docstore.document import Document
+import os
 import io
 nltk.download('punkt_tab')
 
@@ -223,61 +226,43 @@ def get_random_headers():
 # ---------------------------------------
 
 def download_and_parse_pdf_with_timeout(pdf_link, timeout=10):
-    """Downloads and parses a PDF with a time limit, filters short/long content."""
+    """Downloads, parses, and chunks a PDF with a time limit."""
 
-    def download_and_parse():
-        try:
-            headers = {
-                "User-Agent": random.choice([
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/101.0.4951.54 Safari/537.36",
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/15.1 Safari/605.1.15",
-                    "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 Chrome/95.0.4638.69 Safari/537.36",
-                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/100.0.4896.127 Safari/537.36"
-                ]),
-                "Accept-Language": "en-US,en;q=0.9",
-                "Accept-Encoding": "gzip, deflate, br",
-                "Referer": "https://www.google.com/"
-            }
+    try:
+        response = requests.get(pdf_link, timeout=timeout)
+        response.raise_for_status()
 
-            response = requests.get(pdf_link, headers=headers, timeout=timeout)
-            response.raise_for_status()  # Raise an exception for bad status codes (4xx or 5xx)
+        with open('temp.pdf', 'wb') as f:
+            f.write(response.content)
 
-            pdf_file = io.BytesIO(response.content)
-            pdf_reader = PyPDF2.PdfReader(pdf_file)
-            text = ""
-            for page in pdf_reader.pages:
-                text += page.extract_text() or ""
+        reader = PdfReader('temp.pdf')
+        text = ''
+        for page in reader.pages:
+            text += page.extract_text()
 
-            text = text.replace('\n', ' ') #remove newlines
+        data = Document(page_content=text)
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=3000, chunk_overlap=500)
+        chunks = text_splitter.split_documents([data])
+        count_chunks = len(chunks)
 
-            if 1000 <= len(text) <= 100000:
-                result['data'] = {
-                    "content": text,
-                    "link": pdf_link,
-                }
-            else:
-                result['data'] = None  # return None if content too short/long
+        df = pd.DataFrame({'Text': [], 'Link': []})
+        for i in range(count_chunks):
+            chunk_temp = chunks[i]
+            link_temp = pdf_link
+            df.loc[len(df)] = [chunk_temp, link_temp]
+        os.remove('temp.pdf') #remove temporary pdf file
 
-        except Exception as e:
-            result['error'] = str(e)
+        return df
 
-    result = {'data': None, 'error': None}
-    thread = threading.Thread(target=download_and_parse)
-    thread.start()
-    thread.join(timeout=timeout)
-
-    if thread.is_alive():
-        print(f"Download and parse PDF timed out after {timeout} seconds: {pdf_link}")
-        return None  # Return None to indicate timeout
-
-    if result['error']:
-        print(f"Error downloading or parsing PDF {pdf_link}: {result['error']}")
+    except requests.exceptions.RequestException as e:
+        print(f"Request Error: {e}")
+        return None
+    except Exception as e:
+        print(f"Error: {e}")
         return None
 
-    return result['data']
-
 def getPdfData(query):
-    """Searches for and downloads PDF files based on the given query."""
+    """Searches for and downloads PDF files based on the given query, returns dictionary of dataframes."""
 
     headers = {
         "User-Agent": random.choice([
@@ -292,40 +277,35 @@ def getPdfData(query):
     }
 
     encoded_query = quote_plus(query)
-    url = f"https://www.google.com/search?q={encoded_query} filetype:pdf&gl=us&num=10" #added filetype pdf and gl=us
+    url = f"https://www.google.com/search?q={encoded_query} filetype:pdf&gl=us&num=10"
 
     try:
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
         print(f"Error fetching PDF data: {e}")
-        return []
+        return {}
 
     soup = BeautifulSoup(response.content, "html.parser")
     pdf_results = []
 
     for el in soup.select("div.Gx5Zad"):
         a_tag = el.find("a")
-        if a_tag and a_tag["href"].startswith("http"): #check if the link is a valid url
+        if a_tag and a_tag["href"].startswith("http"):
             pdf_results.append({
                 "link": a_tag["href"],
                 "title": el.select_one("h3").get_text(),
                 "snippet": el.select_one(".VwiC3b").get_text(),
             })
 
-    pdf_data = []
+    pdf_dataframes = {}
 
     for result in pdf_results:
-        pdf_info = download_and_parse_pdf_with_timeout(result["link"])
-        if pdf_info:
-            pdf_data.append({
-                "query": query,
-                "title": result["title"],
-                "content": pdf_info["content"],
-                "link": result["link"]
-            })
+        pdf_df = download_and_parse_pdf_with_timeout(result["link"])
+        if pdf_df is not None:
+            pdf_dataframes[result["title"]] = pdf_df
 
-    return pdf_data
+    return pdf_dataframes
 
 def getNewsData(query):
     """Searches for news articles based on the given query, with random headers."""
@@ -402,19 +382,15 @@ def download_and_parse_with_timeout(article, link, timeout=10):
     return result['data']
 
 def extract_article_info(links):
-    """Extracts relevant information from a list of article/PDF links, filters short articles/PDFs."""
+    """Extracts relevant information from a list of article/PDF links, returns a single dataframe."""
     articles_info = []
+    pdf_dfs = []
     for link in links:
         try:
             if link.endswith(".pdf"):
-                article_data = download_and_parse_pdf_with_timeout(link)
-                if article_data:
-                    articles_info.append({
-                        "title": "PDF Document", #default title for pdfs.
-                        "link": link,
-                        "content": article_data["content"],
-                        "type":"PDF"
-                    })
+                pdf_df = download_and_parse_pdf_with_timeout(link)
+                if pdf_df is not None:
+                    pdf_dfs.append(pdf_df)
             else:
                 article = Article(link)
                 article_data = download_and_parse_with_timeout(article, link)
@@ -430,7 +406,9 @@ def extract_article_info(links):
             print(f"Sorry, article/PDF not downloadable: {link}")
             print(f"Error: {e}")
 
-    return articles_info
+    article_df = pd.DataFrame(articles_info)
+    final_df = article_df if not pdf_dfs else pd.concat([article_df, *pdf_dfs], ignore_index=True)
+    return final_df
 
 # ---------------------------------------
 # Query Generation Functions
@@ -988,18 +966,11 @@ if (prompt_input
                     progress_container.info(debug_log)
 
                     if "filetype:pdf" in query and use_pdf:
-                        pdf_data = getPdfData(formatted_query)
-                        if pdf_data:
-                            for pdf in pdf_data:
-                                part_content += pdf["content"] + "\n"
-                                part_data.append({
-                                    "query": pdf["query"],
-                                    "title": pdf["title"],
-                                    "content": pdf["content"],
-                                    "link": pdf["link"],
-                                    "type": "PDF"
-                                })
-                        debug_log = f"After query '{query}', downloaded PDFs count for Part {idx}: {len(pdf_data)}\n"
+                        pdf_dataframes_temp = getPdfData(formatted_query)
+                        if pdf_dataframes_temp:
+                            for title, pdf_df in pdf_dataframes_temp.items():
+                                part_data.extend(pdf_df.to_dict('records'))
+                        debug_log = f"After query '{query}', downloaded PDFs count for Part {idx}: {len(pdf_dataframes_temp)}\n"
                         progress_container.info(debug_log)
 
                     if "-filetype" in query and use_internet:
@@ -1010,23 +981,15 @@ if (prompt_input
                         
                         links = [item["link"] for item in news_data]
                         articles_info = extract_article_info(links)
-                        
-                        for article in articles_info:
-                            if article:  # Check if article is not None (i.e., content length was sufficient)
-                                part_content += article["content"] + "\n"
-                                part_data.append({
-                                    "query": formatted_query,
-                                    "title": article["title"],
-                                    "content": article["content"],
-                                    "link": article["link"],
-                                    "type": article["type"]
-                                })
+                        if articles_info is not None:
+                            part_data.extend(articles_info.to_dict('records'))
+
                         debug_log = f"After query '{query}', downloaded articles count for Part {idx}: {len(articles_info)}\n"
                         progress_container.info(debug_log)
                     time.sleep(1)
 
                 # Store the internet knowledge and dataframe for this part
-                internet_knowledge[part] = part_content
+                internet_knowledge[part] = "\n".join([item.get('content', '') for item in part_data])
                 df = pd.DataFrame(part_data)
                 excel_dataframes[f"internetsearch_part{idx}"] = df
                 debug_log = f"Final article/pdf count for TOC Part {idx}: {len(df)}\n"
