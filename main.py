@@ -702,102 +702,58 @@ def save_results_to_excel_in_memory(parts_list, refined_results, pdf_dataframes 
     excel_buffer.seek(0)
     return excel_buffer.getvalue()
 
-def save_results_to_docx_in_memory(parts_list, refined_results, base_filename="refined_journal_results", pdf_dataframes = {}):
-    """
-    Saves the parts, final output, initial output, and thinking logs into separate DOCX documents, including PDF data.
-    Returns a dictionary of filenames to binary data.
-    """
-    files = {}
+def save_results_to_docx_in_memory(parts_list, refined_results, base_filename="my_results", pdf_dataframes=None):
+    """Saves the refined results and PDF dataframes into in-memory docx files."""
+    docx_files = {}
 
-    # Save parts
-    doc_part = Document()
-    doc_part.add_heading("PART", level=1)
-    for idx, part in enumerate(parts_list, start=1):
-        doc_part.add_heading(f"Part {idx}: {part}", level=2)
-    buffer_part = BytesIO()
-    doc_part.save(buffer_part)
-    buffer_part.seek(0)
-    files[f"{base_filename}_part.docx"] = buffer_part.getvalue()
+    for idx, part in enumerate(parts_list):
+        doc = Document()  # Create a new docx document
+        doc.add_heading(f"Part {idx + 1}: {part}", level=1)
 
-    # Save final outputs
-    doc_final = Document()
-    doc_final.add_heading("FINAL OUTPUT", level=1)
-    for idx, res in enumerate(refined_results, start=1):
-        doc_final.add_heading(f"Part {idx}", level=2)
-        doc_final.add_paragraph(res["FINAL OUTPUT"])
-    buffer_final = BytesIO()
-    doc_final.save(buffer_final)
-    buffer_final.seek(0)
-    files[f"{base_filename}_final_output.docx"] = buffer_final.getvalue()
+        # Add refined results
+        doc.add_paragraph(f"Final Output:\n{refined_results[idx]['FINAL OUTPUT']}")
+        doc.add_paragraph(f"Initial Output:\n{refined_results[idx]['INITIAL OUTPUT']}")
+        doc.add_paragraph(f"Thinking Logs:\n{refined_results[idx]['THINKING LOGS']}")
 
-    # Save initial outputs
-    doc_initial = Document()
-    doc_initial.add_heading("INITIAL OUTPUT", level=1)
-    for idx, res in enumerate(refined_results, start=1):
-        doc_initial.add_heading(f"Part {idx}", level=2)
-        doc_initial.add_paragraph(res["INITIAL OUTPUT"])
-    buffer_initial = BytesIO()
-    doc_initial.save(buffer_initial)
-    buffer_initial.seek(0)
-    files[f"{base_filename}_initial_output.docx"] = buffer_initial.getvalue()
+        # Add PDF dataframes if available
+        if pdf_dataframes and f"internetsearch_part{idx + 1}" in pdf_dataframes:
+            doc.add_heading("PDF Data", level=2)
+            pdf_df = pdf_dataframes[f"internetsearch_part{idx + 1}"]
+            for _, row in pdf_df.iterrows():
+                doc.add_paragraph(f"Link: {row['Link']}\nText: {row['Text']}")
 
-    # Save thinking logs
-    doc_logs = Document()
-    doc_logs.add_heading("THINKING LOGS", level=1)
-    for idx, res in enumerate(refined_results, start=1):
-        doc_logs.add_heading(f"Part {idx}", level=2)
-        doc_logs.add_paragraph("\n\n".join(res["THINKING LOGS"]))
-    buffer_logs = BytesIO()
-    doc_logs.save(buffer_logs)
-    buffer_logs.seek(0)
-    files[f"{base_filename}_thinking_logs.docx"] = buffer_logs.getvalue()
+        # Save docx to in-memory buffer
+        docx_buffer = BytesIO()
+        doc.save(docx_buffer)
+        docx_buffer.seek(0)
+        docx_files[f"{base_filename}_part{idx + 1}.docx"] = docx_buffer.getvalue()
 
-    # Save PDF dataframes as separate documents
-    for df_name, df in pdf_dataframes.items():
-        doc_pdf = Document()
-        doc_pdf.add_heading(f"PDF Data: {df_name}", level=1)
-        # Add dataframe content to the document
-        for column in df.columns:
-            doc_pdf.add_heading(column, level=2)
-            for value in df[column]:
-                doc_pdf.add_paragraph(str(value))
-        buffer_pdf = BytesIO()
-        doc_pdf.save(buffer_pdf)
-        buffer_pdf.seek(0)
-        files[f"{base_filename}_{df_name}.docx"] = buffer_pdf.getvalue()
+    return docx_files
 
-    return files
+def save_results_to_txt_in_memory(parts_list, refined_results, base_filename="my_results", pdf_dataframes=None):
+    """Saves the refined results and PDF dataframes into in-memory text files."""
+    txt_files = {}
 
-def save_results_to_txt_in_memory(parts_list, refined_results, base_filename="refined_journal_results", pdf_dataframes = {}):
-    """
-    Saves the parts, final outputs, initial outputs, and thinking logs into TXT files, including PDF data.
-    Returns a dictionary of filenames to binary data.
-    """
-    files = {}
-    
-    parts_txt = "\n".join(parts_list)
-    files[f"{base_filename}_part.txt"] = parts_txt.encode("utf-8")
-    
-    final_txt = "\n".join([res["FINAL OUTPUT"] for res in refined_results])
-    files[f"{base_filename}_final_output.txt"] = final_txt.encode("utf-8")
-    
-    initial_txt = "\n".join([res["INITIAL OUTPUT"] for res in refined_results])
-    files[f"{base_filename}_initial_output.txt"] = initial_txt.encode("utf-8")
-    
-    logs_txt = "\n\n".join(["\n\n".join(res["THINKING LOGS"]) for res in refined_results])
-    files[f"{base_filename}_thinking_logs.txt"] = logs_txt.encode("utf-8")
+    for idx, part in enumerate(parts_list):
+        txt_buffer = BytesIO()
+        txt_content = ""
 
-    # Save PDF dataframes as separate text files
-    for df_name, df in pdf_dataframes.items():
-        pdf_txt = ""
-        for column in df.columns:
-            pdf_txt += f"{column}:\n"
-            for value in df[column]:
-                pdf_txt += f"{value}\n"
-            pdf_txt += "\n"
-        files[f"{base_filename}_{df_name}.txt"] = pdf_txt.encode("utf-8")
-    
-    return files
+        txt_content += f"Part {idx + 1}: {part}\n\n"
+        txt_content += f"Final Output:\n{refined_results[idx]['FINAL OUTPUT']}\n\n"
+        txt_content += f"Initial Output:\n{refined_results[idx]['INITIAL OUTPUT']}\n\n"
+        txt_content += f"Thinking Logs:\n{refined_results[idx]['THINKING LOGS']}\n\n"
+
+        if pdf_dataframes and f"internetsearch_part{idx + 1}" in pdf_dataframes:
+            txt_content += "PDF Data:\n\n"
+            pdf_df = pdf_dataframes[f"internetsearch_part{idx + 1}"]
+            for _, row in pdf_df.iterrows():
+                txt_content += f"Link: {row['Link']}\nText: {row['Text']}\n\n"
+
+        txt_buffer.write(txt_content.encode("utf-8")) #encode the text
+        txt_buffer.seek(0)
+        txt_files[f"{base_filename}_part{idx + 1}.txt"] = txt_buffer.getvalue()
+
+    return txt_files
 
 # ---------------------------------------
 # Session State Reset Function
@@ -973,7 +929,7 @@ if (prompt_input
                         debug_log = f"After query '{query}', downloaded PDFs count for Part {idx}: {len(pdf_dataframes_temp)}\n"
                         progress_container.info(debug_log)
 
-                    if "-filetype" in query and use_internet:
+                    if "-filetype" not in query and use_internet:
                         news_data = getNewsData(formatted_query)
                         if not news_data:
                             debug_log = f"Warning: No news data returned for query: {formatted_query}\n"
