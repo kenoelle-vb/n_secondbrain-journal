@@ -27,7 +27,13 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.docstore.document import Document
 import os
 import io
-nltk.download('punkt_tab')
+
+# Check if nltk data is already downloaded
+if not os.path.exists(nltk.data.path[0]):
+    try:
+        nltk.download('punkt_tab')
+    except Exception as e:
+        print(f"Error downloading nltk data: {e}")
 
 # ============================================== HTML AND CSS =========================================================================================
 
@@ -778,7 +784,7 @@ colmain1, colmain2 = st.columns([1, 12])
 with colmain1:
     image = Image.open('logo.png')
     resized_image = image.resize((80, 80))
-    st.image(resized_image)
+    st.image(resized_image, label="app logo")
 with colmain2:
     st.markdown(
         """
@@ -793,13 +799,13 @@ with colmain2:
 col1, col2, col3 = st.columns([3, 2, 2])
 
 # Column 1: Paper Type, Prompt Input and Length Info
-with col1.expander("", expanded=True):
+with col1.expander("Prompt and Paper Type", expanded=True):
     st.subheader("Select Paper Type")
     paper_types = ["Research Paper", "Essay", "Opinion Essay", "Literature Review", "Case Study", "Thesis", "Dissertation", "Term Paper", "Report", "Analysis"]
-    paper_type = st.selectbox("Paper Type", paper_types)
+    paper_type = st.selectbox("Paper Type", paper_types, label="paper type")
     
     st.subheader("Enter Main Prompt")
-    prompt_input = st.text_area("Main Prompt", height=410)
+    prompt_input = st.text_area("Main Prompt", height=410, label="main prompt")
     prompt_length_container = st.container()
     if prompt_input:
         prompt_len = len(prompt_input)
@@ -810,37 +816,37 @@ with col1.expander("", expanded=True):
         prompt_length_container.info("Prompt length: 0 / 10000")
 
 # Column 2: TOC and Refinement Settings
-with col2.expander("", expanded=True):
+with col2.expander("TOC and Refinement", expanded=True):
     st.subheader("Table of Contents Settings")
     st.write("Select how many parts the task should be divided into.")
-    toc_parts = st.slider("", min_value=1, max_value=40, value=5)
+    toc_parts = st.slider("Number of Parts", min_value=1, max_value=40, value=5, label="toc parts")
     
     st.subheader("Refinement Iterations")
     st.write("Select how many refinement iterations (thinking sessions) to perform for each part.")
-    n_iterations = st.slider("", min_value=1, max_value=7, value=4)
+    n_iterations = st.slider("Iterations", min_value=1, max_value=7, value=4, label="refinement iterations")
 
     st.subheader("Internet Search")
-    use_internet = st.checkbox("Use Internet Search as Context")
+    use_internet = st.checkbox("Use Internet Search as Context", label="internet search")
     if use_internet:
-        after_date = st.date_input("Search After", value=datetime.date(2020, 1, 1))
-        before_date = st.date_input("Search Before", value=datetime.date(2029, 1, 1))
+        after_date = st.date_input("Search After", value=datetime.date(2020, 1, 1), label="after date")
+        before_date = st.date_input("Search Before", value=datetime.date(2029, 1, 1), label="before date")
     
-    use_pdf = st.checkbox("Use PDF Search as Context")
+    use_pdf = st.checkbox("Use PDF Search as Context", label="pdf search")
 
 # Column 3: Output File Settings & Initial Generate Button
-with col3.expander("", expanded=True):
+with col3.expander("Output Settings", expanded=True):
     st.subheader("Select Types of File")
     st.write("Choose the file formats for the final outputs (docx, excel, txt).")
     doc_types = st.multiselect(
         "Document Types",
         options=["docx", "excel", "txt"],
-        default=["docx", "excel", "txt"]
+        default=["docx", "excel", "txt"], label="document types"
     )
     if prompt_input:
         est_time = toc_parts * n_iterations * 0.8
         st.warning(f"Estimated processing time: ~{est_time:.1f} minutes.")
     if prompt_input and "toc_locked" not in st.session_state:
-        generate_toc_button = st.button("Generate TOC", key="generate_toc")
+        generate_toc_button = st.button("Generate TOC", key="generate_toc", label="generate toc")
 
 # ----------------------------------------------------------------------------- 
 # --- TOC Generation & Display --- 
@@ -850,26 +856,26 @@ if prompt_input and "toc_locked" not in st.session_state and generate_toc_button
     st.success("Table of Contents generated!")
 
 if prompt_input and ("toc" in st.session_state or "toc_locked" in st.session_state):
-    with st.expander("", expanded=True):
+    with st.expander("TOC Display", expanded=True):
         st.subheader("Generated Table of Contents")
         st.write("This Table of Contents was generated to give you an idea:")
         if "toc_locked" in st.session_state:
             st.write(st.session_state["toc_locked"])
         else:
             st.write(st.session_state["toc"])
-            if st.button("Re-Generate TOC", key="regen_toc"):
+            if st.button("Re-Generate TOC", key="regen_toc", label="re-generate toc"):
                 st.session_state["toc"] = table_of_contents(prompt_input, n_parts=toc_parts, model=st.session_state["model"], paper_type=paper_type)
                 st.success("Table of Contents regenerated!")
     
     if "toc_locked" not in st.session_state:
-        with st.expander("", expanded=True):
+        with st.expander("TOC Customization", expanded=True):
             st.subheader("Table of Contents Customization")
             if "toc_text_area" not in st.session_state:
                 st.session_state["toc_text_area"] = st.session_state["toc"]
             locked_toc = st.text_area("Edit Your Table of Contents (or copy and paste it here) (note: MUST HAVE NUMBER BEFORE PART (ex : 1. Part 1 ; 2. Part 2)):", 
                                         value=st.session_state["toc_text_area"],
-                                        height=200, key="toc_text_area")
-            if st.button("Process", key="process_toc"):
+                                        height=200, key="toc_text_area", label="edit toc")
+            if st.button("Process", key="process_toc", label="process toc"):
                 st.session_state["toc_locked"] = locked_toc
                 st.session_state["proceed"] = True
 
@@ -887,7 +893,7 @@ if (prompt_input
     # Step 1: Extract parts from the locked TOC
     parts_list = extract_parts(st.session_state["toc_locked"])
     
-    with st.expander("", expanded=True):
+    with st.expander("Progress Log", expanded=True):
         st.subheader("Progress Log")
         progress_container = st.empty()
         debug_log = ""
